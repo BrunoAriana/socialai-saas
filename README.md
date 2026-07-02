@@ -1,16 +1,17 @@
-# SocialAI SaaS — Versão Premium com OpenAI
+# SocialAI SaaS Premium com IA, Painel Comercial e Login Google
 
-Sistema Flask pronto para Render com:
+Versão pronta para Render com:
 
-- Login/cadastro
-- Cadastro de marca
-- Posts por template premium
-- Posts com IA Visual Premium via OpenAI
-- Legenda, hashtags e CTA gerados por IA
-- Preview com marca d'água
-- Download final bloqueado por créditos
-- Painel comercial para planos, promoções, PIX e IA Premium
-- Painel admin para aprovar pagamentos manuais
+- Login/cadastro por e-mail e senha
+- Esqueci minha senha
+- Redefinição de senha por link
+- Perfil do usuário e troca de senha
+- Login/cadastro com Google OAuth opcional
+- Painel comercial
+- Créditos, pacotes e assinaturas manuais
+- Modo Template Premium
+- Modo IA Visual Premium via OpenAI API
+- Preview com marca d'água e download final protegido por créditos
 
 ## Variáveis obrigatórias no Render
 
@@ -21,19 +22,46 @@ PIX_KEY=sua-chave-pix
 ENABLE_FAKE_PAYMENT=0
 UPLOAD_FOLDER=/tmp/generated_private
 FREE_PREVIEW_LIMIT=30
-OPENAI_API_KEY=sua-chave-da-openai
+DATABASE_URL=sua-url-postgresql
+OPENAI_API_KEY=sua-chave-openai
 OPENAI_TEXT_MODEL=gpt-4.1-mini
 OPENAI_IMAGE_MODEL=gpt-image-1
 AI_PREMIUM_COST=3
 ```
 
-Para produção com banco persistente, configure também:
+## Esqueci minha senha
+
+Para enviar e-mail real, configure SMTP no Render:
 
 ```env
-DATABASE_URL=postgresql://...
+SMTP_HOST=smtp.seuprovedor.com
+SMTP_PORT=587
+SMTP_USER=seuemail@seudominio.com
+SMTP_PASSWORD=sua-senha-ou-app-password
+SMTP_FROM=seuemail@seudominio.com
+SMTP_USE_TLS=1
 ```
 
-## Comandos Render
+Se SMTP não estiver configurado, o sistema não envia o e-mail. Em modo teste (`ENABLE_FAKE_PAYMENT=1`), ele mostra o link na tela para facilitar testes.
+
+## Login com Google
+
+Para ativar o botão de Google, configure no Render:
+
+```env
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+```
+
+No Google Cloud Console, crie um OAuth Client do tipo Web Application e adicione a URL autorizada de callback:
+
+```text
+https://SEU-SITE.onrender.com/auth/google/callback
+```
+
+Depois salve as variáveis no Render e faça redeploy.
+
+## Deploy no Render
 
 Build Command:
 
@@ -47,16 +75,11 @@ Start Command:
 gunicorn app:app
 ```
 
-## Como funciona a IA Premium
+## Atualizar site já publicado
 
-1. Cliente escolhe modo `IA Visual Premium`.
-2. O sistema exige créditos antes de chamar a API.
-3. A IA gera a copy estratégica.
-4. A IA gera uma imagem sem texto.
-5. O sistema aplica headline, CTA e marca por cima para manter o texto legível.
-6. A prévia aparece com marca d'água.
-7. O download final consome crédito normalmente.
+1. Extraia o ZIP.
+2. Envie todos os arquivos e pastas para o mesmo repositório GitHub.
+3. Clique em Commit changes.
+4. No Render, faça Manual Deploy > Deploy latest commit.
 
-## Observação de custo
-
-O modo IA Premium usa API paga. Por padrão, cada arte gerada consome 3 créditos do usuário, além do crédito de download final. Você pode alterar isso no Painel Comercial.
+O sistema executa uma pequena atualização automática de banco para adicionar Google Login e recuperação de senha em bancos já existentes.

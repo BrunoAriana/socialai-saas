@@ -1,1 +1,17 @@
-{% extends 'base.html' %}{% block content %}<div class="card" style="max-width:520px;margin:auto"><h1>Criar conta</h1><form method="post"><label class="label">Nome</label><input class="input" name="name" required><label class="label">E-mail</label><input class="input" type="email" name="email" required><label class="label">Senha</label><input class="input" type="password" name="password" minlength="6" required><button class="btn">Criar conta</button></form></div>{% endblock %}
+{% extends 'base.html' %}{% block content %}
+<div class="card" style="max-width:520px;margin:auto">
+  <h1>Criar conta</h1>
+  {% if google_login_enabled %}
+    <a class="btn light" style="width:100%;margin-bottom:14px" href="{{ url_for('google_login') }}">Cadastrar com Google</a>
+    <div class="muted small" style="text-align:center;margin-bottom:14px">ou crie com e-mail e senha</div>
+  {% endif %}
+  <form method="post">
+    <label class="label">Nome</label><input class="input" name="name" required>
+    <label class="label">E-mail</label><input class="input" type="email" name="email" required>
+    <label class="label">Senha</label><input class="input" type="password" name="password" minlength="6" required>
+    <button class="btn">Criar conta</button>
+  </form>
+  <div class="hr"></div>
+  <p class="small muted">Já tem conta? <a href="{{ url_for('login') }}">Entrar</a></p>
+</div>
+{% endblock %}

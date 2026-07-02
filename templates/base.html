@@ -15,7 +15,7 @@
     <a class="brand" href="{{ url_for('dashboard') if session.get('user_id') else url_for('home') }}">{{ site_name }}</a>
     <div class="navlinks">
       {% if session.get('user_id') %}
-        <a href="{{ url_for('dashboard') }}">Painel</a><a href="{{ url_for('generate') }}">Gerar</a><a href="{{ url_for('posts') }}">Posts</a><a href="{{ url_for('calendar') }}">Calendário</a><a href="{{ url_for('plans') }}">Planos</a><a href="{{ url_for('brand') }}">Marca</a>{% if current_user and current_user.is_admin %}<a href="{{ url_for('admin_orders') }}">Pedidos</a><a href="{{ url_for('admin_commercial') }}">Comercial</a>{% endif %}<a href="{{ url_for('logout') }}">Sair</a>
+        <a href="{{ url_for('dashboard') }}">Painel</a><a href="{{ url_for('generate') }}">Gerar</a><a href="{{ url_for('posts') }}">Posts</a><a href="{{ url_for('calendar') }}">Calendário</a><a href="{{ url_for('plans') }}">Planos</a><a href="{{ url_for('brand') }}">Marca</a><a href="{{ url_for('profile') }}">Perfil</a>{% if current_user and current_user.is_admin %}<a href="{{ url_for('admin_orders') }}">Pedidos</a><a href="{{ url_for('admin_commercial') }}">Comercial</a>{% endif %}<a href="{{ url_for('logout') }}">Sair</a>
       {% else %}
         <a href="{{ url_for('login') }}">Entrar</a><a class="btn" href="{{ url_for('register') }}">Criar conta</a>
       {% endif %}

@@ -5,6 +5,9 @@ import textwrap
 import base64
 import json
 import urllib.request
+import secrets
+import smtplib
+from email.message import EmailMessage
 from datetime import datetime, timedelta
 from functools import wraps
 from io import BytesIO
@@ -13,6 +16,8 @@ from pathlib import Path
 from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory, send_file, abort, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
+from sqlalchemy import text, inspect
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 try:
@@ -20,11 +25,17 @@ try:
 except Exception:
     OpenAI = None
 
+try:
+    from authlib.integrations.flask_client import OAuth
+except Exception:
+    OAuth = None
+
 BASE_DIR = Path(__file__).resolve().parent
 INSTANCE_DIR = BASE_DIR / 'instance'
 PRIVATE_DIR = Path(os.getenv('UPLOAD_FOLDER', BASE_DIR / 'generated_private'))
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'troque-esta-chave-em-producao')
 raw_db_url = os.getenv('DATABASE_URL', f"sqlite:///{INSTANCE_DIR / 'socialai.db'}")
 # Render/Railway às vezes fornecem postgres://; SQLAlchemy moderno espera postgresql://
@@ -37,8 +48,25 @@ app.config['PIX_KEY'] = os.getenv('PIX_KEY', 'configure-sua-chave-pix')
 app.config['ADMIN_EMAIL'] = os.getenv('ADMIN_EMAIL', 'admin@seudominio.com').lower()
 app.config['ENABLE_FAKE_PAYMENT'] = os.getenv('ENABLE_FAKE_PAYMENT', '0') == '1'
 app.config['FREE_PREVIEW_LIMIT'] = int(os.getenv('FREE_PREVIEW_LIMIT', '30'))
+app.config['GOOGLE_CLIENT_ID'] = os.getenv('GOOGLE_CLIENT_ID', '')
+app.config['GOOGLE_CLIENT_SECRET'] = os.getenv('GOOGLE_CLIENT_SECRET', '')
+app.config['SMTP_HOST'] = os.getenv('SMTP_HOST', '')
+app.config['SMTP_PORT'] = int(os.getenv('SMTP_PORT', '587'))
+app.config['SMTP_USER'] = os.getenv('SMTP_USER', '')
+app.config['SMTP_PASSWORD'] = os.getenv('SMTP_PASSWORD', '')
+app.config['SMTP_FROM'] = os.getenv('SMTP_FROM', os.getenv('SMTP_USER', 'no-reply@seudominio.com'))
+app.config['SMTP_USE_TLS'] = os.getenv('SMTP_USE_TLS', '1') == '1'
 
 db = SQLAlchemy(app)
+oauth = OAuth(app) if OAuth else None
+if oauth and app.config['GOOGLE_CLIENT_ID'] and app.config['GOOGLE_CLIENT_SECRET']:
+    oauth.register(
+        name='google',
+        client_id=app.config['GOOGLE_CLIENT_ID'],
+        client_secret=app.config['GOOGLE_CLIENT_SECRET'],
+        server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+        client_kwargs={'scope': 'openid email profile'},
+    )
 
 
 class User(db.Model):
@@ -46,6 +74,8 @@ class User(db.Model):
     name = db.Column(db.String(120), nullable=False)
     email = db.Column(db.String(180), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
+    google_id = db.Column(db.String(255), nullable=True, index=True)
+    auth_provider = db.Column(db.String(30), default='email', nullable=False)
     credits = db.Column(db.Integer, default=0, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -53,6 +83,20 @@ class User(db.Model):
     def is_admin(self):
         return self.email.lower() == app.config['ADMIN_EMAIL']
 
+
+
+
+class PasswordResetToken(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    token_hash = db.Column(db.String(255), nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def is_valid(self):
+        return not self.used_at and self.expires_at > datetime.utcnow()
 
 class Brand(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -175,6 +219,81 @@ DEFAULT_SETTINGS = {
 }
 
 
+
+
+def is_google_login_enabled():
+    return bool(oauth and app.config.get('GOOGLE_CLIENT_ID') and app.config.get('GOOGLE_CLIENT_SECRET'))
+
+
+def send_email_message(to_email, subject, body):
+    """Envia e-mail por SMTP quando configurado. Retorna True se enviou."""
+    if not app.config.get('SMTP_HOST'):
+        app.logger.warning('SMTP não configurado. E-mail não enviado para %s. Conteúdo: %s', to_email, body)
+        return False
+    msg = EmailMessage()
+    msg['Subject'] = subject
+    msg['From'] = app.config['SMTP_FROM']
+    msg['To'] = to_email
+    msg.set_content(body)
+    with smtplib.SMTP(app.config['SMTP_HOST'], app.config['SMTP_PORT'], timeout=20) as server:
+        if app.config.get('SMTP_USE_TLS'):
+            server.starttls()
+        if app.config.get('SMTP_USER'):
+            server.login(app.config['SMTP_USER'], app.config['SMTP_PASSWORD'])
+        server.send_message(msg)
+    return True
+
+
+def create_password_reset_link(user):
+    raw_token = secrets.token_urlsafe(40)
+    reset = PasswordResetToken(
+        user_id=user.id,
+        token_hash=generate_password_hash(raw_token),
+        expires_at=datetime.utcnow() + timedelta(hours=2),
+    )
+    db.session.add(reset)
+    db.session.commit()
+    return url_for('reset_password', token=raw_token, _external=True)
+
+
+def find_password_reset_token(raw_token):
+    active_tokens = PasswordResetToken.query.filter(
+        PasswordResetToken.used_at.is_(None),
+        PasswordResetToken.expires_at > datetime.utcnow()
+    ).order_by(PasswordResetToken.created_at.desc()).limit(50).all()
+    for item in active_tokens:
+        if check_password_hash(item.token_hash, raw_token):
+            return item
+    return None
+
+
+def ensure_schema_updates():
+    """Pequena migração automática para bancos já publicados no Render."""
+    inspector = inspect(db.engine)
+    try:
+        cols = {c['name'] for c in inspector.get_columns('user')}
+    except Exception:
+        return
+    dialect = db.engine.dialect.name
+    stmts = []
+    if 'google_id' not in cols:
+        if dialect == 'postgresql':
+            stmts.append('ALTER TABLE "user" ADD COLUMN google_id VARCHAR(255)')
+        else:
+            stmts.append('ALTER TABLE user ADD COLUMN google_id VARCHAR(255)')
+    if 'auth_provider' not in cols:
+        if dialect == 'postgresql':
+            stmts.append('ALTER TABLE "user" ADD COLUMN auth_provider VARCHAR(30) DEFAULT \'email\' NOT NULL')
+        else:
+            stmts.append("ALTER TABLE user ADD COLUMN auth_provider VARCHAR(30) DEFAULT 'email' NOT NULL")
+    for stmt in stmts:
+        try:
+            db.session.execute(text(stmt))
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.warning('Migração ignorada/falhou: %s - %s', stmt, exc)
+
 def seed_commercial_defaults():
     for data in DEFAULT_PLANS:
         if not CommercialPlan.query.filter_by(key=data['key']).first():
@@ -243,6 +362,7 @@ def inject_globals():
         'objectives': OBJECTIVES,
         'get_setting': get_setting,
         'site_name': get_setting('site_name', 'SocialAI Pro') if 'site_setting' in db.metadata.tables else 'SocialAI Pro',
+        'google_login_enabled': is_google_login_enabled(),
     }
 
 
@@ -806,10 +926,20 @@ def home():
 def register():
     if request.method == 'POST':
         email = request.form['email'].strip().lower()
-        if User.query.filter_by(email=email).first():
-            flash('Este e-mail já está cadastrado.', 'error')
+        password = request.form.get('password', '')
+        if len(password) < 6:
+            flash('A senha precisa ter pelo menos 6 caracteres.', 'error')
             return redirect(url_for('register'))
-        user = User(name=request.form['name'].strip(), email=email, password_hash=generate_password_hash(request.form['password']), credits=0)
+        if User.query.filter_by(email=email).first():
+            flash('Este e-mail já está cadastrado. Entre com sua senha ou use “Esqueci minha senha”.', 'error')
+            return redirect(url_for('login'))
+        user = User(
+            name=request.form['name'].strip(),
+            email=email,
+            password_hash=generate_password_hash(password),
+            auth_provider='email',
+            credits=0,
+        )
         db.session.add(user)
         db.session.commit()
         session['user_id'] = user.id
@@ -827,6 +957,135 @@ def login():
         session['user_id'] = user.id
         return redirect(url_for('dashboard'))
     return render_template('login.html')
+
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        email = request.form['email'].strip().lower()
+        user = User.query.filter_by(email=email).first()
+        if user:
+            link = create_password_reset_link(user)
+            body = (
+                f"Olá, {user.name}!\n\n"
+                f"Recebemos uma solicitação para redefinir sua senha.\n"
+                f"Acesse este link em até 2 horas:\n{link}\n\n"
+                f"Se você não solicitou isso, ignore este e-mail."
+            )
+            sent = send_email_message(user.email, f'Redefinir senha - {get_setting("site_name", "SocialAI Pro")}', body)
+            if not sent and app.config.get('ENABLE_FAKE_PAYMENT'):
+                flash(f'Modo teste: link de redefinição gerado: {link}', 'success')
+            else:
+                flash('Se esse e-mail estiver cadastrado, enviamos um link para redefinir sua senha.', 'success')
+        else:
+            flash('Se esse e-mail estiver cadastrado, enviamos um link para redefinir sua senha.', 'success')
+        return redirect(url_for('login'))
+    return render_template('forgot_password.html')
+
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    reset = find_password_reset_token(token)
+    if not reset:
+        flash('Link inválido ou expirado. Solicite uma nova redefinição de senha.', 'error')
+        return redirect(url_for('forgot_password'))
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        confirm = request.form.get('confirm_password', '')
+        if len(password) < 6:
+            flash('A senha precisa ter pelo menos 6 caracteres.', 'error')
+            return redirect(request.url)
+        if password != confirm:
+            flash('As senhas não conferem.', 'error')
+            return redirect(request.url)
+        user = User.query.get_or_404(reset.user_id)
+        user.password_hash = generate_password_hash(password)
+        user.auth_provider = user.auth_provider or 'email'
+        reset.used_at = datetime.utcnow()
+        db.session.commit()
+        flash('Senha redefinida. Agora você já pode entrar.', 'success')
+        return redirect(url_for('login'))
+    return render_template('reset_password.html')
+
+
+@app.route('/auth/google')
+def google_login():
+    if not is_google_login_enabled():
+        flash('Login com Google ainda não configurado pelo administrador.', 'error')
+        return redirect(url_for('login'))
+    redirect_uri = url_for('google_callback', _external=True)
+    return oauth.google.authorize_redirect(redirect_uri)
+
+
+@app.route('/auth/google/callback')
+def google_callback():
+    if not is_google_login_enabled():
+        flash('Login com Google ainda não configurado.', 'error')
+        return redirect(url_for('login'))
+    try:
+        token = oauth.google.authorize_access_token()
+        userinfo = token.get('userinfo')
+        if not userinfo:
+            userinfo = oauth.google.get('https://openidconnect.googleapis.com/v1/userinfo').json()
+    except Exception as exc:
+        app.logger.exception('Erro no login Google: %s', exc)
+        flash('Não foi possível entrar com Google. Tente novamente.', 'error')
+        return redirect(url_for('login'))
+
+    email = (userinfo.get('email') or '').lower().strip()
+    google_id = userinfo.get('sub')
+    name = userinfo.get('name') or email.split('@')[0]
+    if not email or not google_id:
+        flash('Não recebemos e-mail válido do Google.', 'error')
+        return redirect(url_for('login'))
+
+    user = User.query.filter_by(email=email).first()
+    if user:
+        if not user.google_id:
+            user.google_id = google_id
+        user.auth_provider = 'google' if user.auth_provider == 'email' else user.auth_provider
+    else:
+        user = User(
+            name=name,
+            email=email,
+            google_id=google_id,
+            auth_provider='google',
+            password_hash=generate_password_hash(secrets.token_urlsafe(32)),
+            credits=0,
+        )
+        db.session.add(user)
+    db.session.commit()
+    session['user_id'] = user.id
+    flash('Login com Google realizado com sucesso.', 'success')
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/profile', methods=['GET', 'POST'])
+@login_required
+def profile():
+    user = current_user()
+    if request.method == 'POST':
+        action = request.form.get('action')
+        if action == 'profile':
+            user.name = request.form.get('name', '').strip() or user.name
+            db.session.commit()
+            flash('Perfil atualizado.', 'success')
+        elif action == 'password':
+            current = request.form.get('current_password', '')
+            password = request.form.get('password', '')
+            confirm = request.form.get('confirm_password', '')
+            if not check_password_hash(user.password_hash, current):
+                flash('Senha atual incorreta.', 'error')
+            elif len(password) < 6:
+                flash('A nova senha precisa ter pelo menos 6 caracteres.', 'error')
+            elif password != confirm:
+                flash('As senhas não conferem.', 'error')
+            else:
+                user.password_hash = generate_password_hash(password)
+                db.session.commit()
+                flash('Senha alterada.', 'success')
+        return redirect(url_for('profile'))
+    return render_template('profile.html', user=user)
 
 
 @app.route('/logout')
@@ -1177,6 +1436,7 @@ def init_db():
     INSTANCE_DIR.mkdir(exist_ok=True)
     PRIVATE_DIR.mkdir(parents=True, exist_ok=True)
     db.create_all()
+    ensure_schema_updates()
     seed_commercial_defaults()
     print('Banco criado/atualizado e painel comercial configurado.')
 
@@ -1185,6 +1445,7 @@ with app.app_context():
     INSTANCE_DIR.mkdir(exist_ok=True)
     PRIVATE_DIR.mkdir(parents=True, exist_ok=True)
     db.create_all()
+    ensure_schema_updates()
     seed_commercial_defaults()
 
 if __name__ == '__main__':
