@@ -1,0 +1,24 @@
+{% extends 'base.html' %}{% block content %}
+<div class="row" style="justify-content:space-between"><div><h1>Painel comercial</h1><p class="muted">Controle preços, créditos, promoções, textos comerciais e chave PIX sem editar código.</p></div><a class="btn" href="{{ url_for('admin_new_plan') }}">Novo plano</a></div>
+<div class="grid">
+  <div class="card"><span class="muted">Usuários</span><div class="kpi">{{ stats.users }}</div></div>
+  <div class="card"><span class="muted">Pedidos pendentes</span><div class="kpi">{{ stats.pending }}</div></div>
+  <div class="card"><span class="muted">Receita aprovada</span><div class="kpi">{{ format_money(stats.revenue_cents) }}</div></div>
+</div>
+
+<h2>Configurações de venda</h2>
+<form method="post" action="{{ url_for('admin_save_settings') }}" class="card">
+  <label class="label">Nome do site</label><input class="input" name="site_name" value="{{ settings.site_name }}">
+  <label class="label">Título principal da página pública</label><input class="input" name="hero_title" value="{{ settings.hero_title }}">
+  <label class="label">Subtítulo da página pública</label><textarea name="hero_subtitle">{{ settings.hero_subtitle }}</textarea>
+  <label class="label">Banner de promoção na página de planos</label><textarea name="sales_banner">{{ settings.sales_banner }}</textarea>
+  <div class="grid2"><div><label class="label">Chave PIX</label><input class="input" name="pix_key" value="{{ settings.pix_key }}"></div><div><label class="label">WhatsApp comercial</label><input class="input" name="whatsapp" value="{{ settings.whatsapp }}" placeholder="5599999999999"></div></div>
+  <button class="btn">Salvar configurações</button>
+</form>
+
+<h2>Planos e pacotes</h2>
+<table><tr><th>Ordem</th><th>Nome</th><th>Tipo</th><th>Preço</th><th>Créditos</th><th>Destaque</th><th>Status</th><th>Ações</th></tr>
+{% for p in plans %}<tr>
+<td>{{ p.sort_order }}</td><td><b>{{ p.name }}</b><br><span class="small muted">{{ p.key }}{% if p.badge %} · {{ p.badge }}{% endif %}</span></td><td>{{ 'Assinatura' if p.plan_type=='subscription' else 'Avulso' }}</td><td>{% if p.original_amount_cents %}<s class="muted">{{ format_money(p.original_amount_cents) }}</s><br>{% endif %}{{ format_money(p.amount_cents) }}</td><td>{{ p.credits }}{% if p.bonus_credits %} + {{ p.bonus_credits }} bônus{% endif %}</td><td>{% if p.featured %}<span class="badge ok">Sim</span>{% else %}-{% endif %}</td><td><span class="badge {% if p.active %}ok{% else %}err{% endif %}">{{ 'Ativo' if p.active else 'Inativo' }}</span></td><td><a href="{{ url_for('admin_edit_plan', plan_id=p.id) }}">Editar</a><br><form method="post" action="{{ url_for('admin_toggle_plan', plan_id=p.id) }}" style="margin-top:8px"><button class="btn light">{{ 'Desativar' if p.active else 'Ativar' }}</button></form></td>
+</tr>{% endfor %}</table>
+{% endblock %}

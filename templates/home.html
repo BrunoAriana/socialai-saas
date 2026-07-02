@@ -1,0 +1,16 @@
+{% extends 'base.html' %}{% block content %}
+<section class="hero">
+  <div>
+    <h1>{{ get_setting('hero_title', 'Posts profissionais por créditos.') }}</h1>
+    <p>{{ get_setting('hero_subtitle', '') }}</p>
+    <p class="row"><a class="btn" href="{{ url_for('register') }}">Testar agora</a><a class="btn light" href="{{ url_for('login') }}">Entrar</a></p>
+    <p><span class="pill">Prévia protegida</span><span class="pill">PIX manual</span><span class="pill">Créditos por download</span><span class="pill">Admin de pedidos</span></p>
+  </div>
+  <div class="card sample"></div>
+</section>
+<div class="grid">
+  <div class="card"><h2>Geração estratégica</h2><p class="muted">Títulos, legendas, hashtags e CTA com objetivo: direct, autoridade, educativo, oferta ou interesse.</p></div>
+  <div class="card"><h2>Visual premium</h2><p class="muted">Templates com composição elegante, hierarquia, cores da marca, rodapé e botão de ação.</p></div>
+  <div class="card"><h2>Venda simples</h2><p class="muted">Pacotes de créditos. Cada download final consome 1 crédito. A prévia continua bloqueada por marca d’água.</p></div>
+</div>
+{% endblock %}

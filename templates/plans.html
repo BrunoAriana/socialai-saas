@@ -1,0 +1,41 @@
+{% extends 'base.html' %}{% block content %}
+<h1>Planos e créditos</h1>
+<p class="muted">{{ get_setting('sales_banner', '') }}</p>
+<div class="notice">Cada crédito libera <b>1 download de PNG final sem marca d’água</b>. Você pode gerar prévias e baixar somente as artes que gostar.</div>
+
+{% if subscriptions %}
+<h2>Assinaturas mensais</h2>
+<div class="grid">
+{% for p in subscriptions %}
+  <div class="card" style="{% if p.featured %}border:2px solid var(--accent); transform:scale(1.02);{% endif %}">
+    {% if p.badge %}<span class="badge {% if p.featured %}ok{% endif %}">{{ p.badge }}</span>{% endif %}
+    <h2>{{ p.name }}</h2>
+    <p>{{ p.description }}</p>
+    {% if p.original_amount_cents %}<p class="muted"><s>{{ format_money(p.original_amount_cents) }}</s></p>{% endif %}
+    <div class="price">{{ format_money(p.amount_cents) }}<span class="small">/mês</span></div>
+    <p><span class="badge">{{ p.credits }} créditos/mês</span>{% if p.bonus_credits %} <span class="badge ok">+{{ p.bonus_credits }} bônus</span>{% endif %}</p>
+    <form method="post" action="{{ url_for('purchase', package_key=p.key) }}"><button class="btn {% if p.featured %}secondary{% endif %}">{{ p.cta }}</button></form>
+  </div>
+{% endfor %}
+</div>
+{% endif %}
+
+{% if packages %}
+<h2>Pacotes avulsos</h2>
+<div class="grid">
+{% for p in packages %}
+  <div class="card">
+    {% if p.badge %}<span class="badge">{{ p.badge }}</span>{% endif %}
+    <h2>{{ p.name }}</h2>
+    <p>{{ p.description }}</p>
+    <div class="price">{{ format_money(p.amount_cents) }}</div>
+    <p><span class="badge">{{ p.credits }} créditos</span>{% if p.bonus_credits %} <span class="badge ok">+{{ p.bonus_credits }} bônus</span>{% endif %}</p>
+    <form method="post" action="{{ url_for('purchase', package_key=p.key) }}"><button class="btn">{{ p.cta }}</button></form>
+  </div>
+{% endfor %}
+</div>
+{% endif %}
+
+<h2>Meus pedidos</h2>
+<table><tr><th>Pedido</th><th>Plano/Pacote</th><th>Valor</th><th>Status</th><th>Ação</th></tr>{% for o in purchases %}<tr><td>#{{ o.id }}</td><td>{{ o.package_name }}<br><span class="small muted">{{ o.credits }} créditos liberados após aprovação</span></td><td>{{ format_money(o.amount_cents) }}</td><td><span class="badge {% if o.status=='paid' %}ok{% elif o.status=='pending' %}warn{% else %}err{% endif %}">{{ o.status }}</span></td><td>{% if o.status=='pending' %}<a href="{{ url_for('pay', purchase_id=o.id) }}">Ver pagamento</a>{% else %}-{% endif %}</td></tr>{% else %}<tr><td colspan="5">Nenhum pedido ainda.</td></tr>{% endfor %}</table>
+{% endblock %}

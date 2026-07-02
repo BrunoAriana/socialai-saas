@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: socialai-pro
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 2 --threads 4 --timeout 120
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_EMAIL
+        value: seuemail@seudominio.com
+      - key: PIX_KEY
+        value: sua-chave-pix
+      - key: ENABLE_FAKE_PAYMENT
+        value: "0"
+      - key: UPLOAD_FOLDER
+        value: /var/data/generated_private
+      - key: DATABASE_URL
+        fromDatabase:
+          name: socialai-db
+          property: connectionString
+databases:
+  - name: socialai-db
+    plan: starter

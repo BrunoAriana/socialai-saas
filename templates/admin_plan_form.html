@@ -1,0 +1,14 @@
+{% extends 'base.html' %}{% block content %}
+<h1>{{ action }}</h1>
+<form method="post" class="card">
+  <div class="grid2"><div><label class="label">Chave interna</label><input class="input" name="key" value="{{ plan.key or '' }}" placeholder="pro_lancamento" required></div><div><label class="label">Nome público</label><input class="input" name="name" value="{{ plan.name or '' }}" placeholder="Pro Lançamento" required></div></div>
+  <div class="grid2"><div><label class="label">Tipo</label><select name="plan_type"><option value="package" {% if plan.plan_type=='package' %}selected{% endif %}>Pacote avulso</option><option value="subscription" {% if plan.plan_type=='subscription' %}selected{% endif %}>Assinatura mensal</option></select></div><div><label class="label">Ordem de exibição</label><input class="input" type="number" name="sort_order" value="{{ plan.sort_order or 0 }}"></div></div>
+  <div class="grid2"><div><label class="label">Preço atual, em R$</label><input class="input" name="amount" value="{{ '%.2f'|format((plan.amount_cents or 0)/100) }}" placeholder="69,90"></div><div><label class="label">Preço original opcional, em R$</label><input class="input" name="original_amount" value="{{ '%.2f'|format((plan.original_amount_cents or 0)/100) if plan.original_amount_cents else '' }}" placeholder="99,90"></div></div>
+  <div class="grid2"><div><label class="label">Créditos</label><input class="input" type="number" name="credits" value="{{ plan.credits or 0 }}"></div><div><label class="label">Créditos bônus</label><input class="input" type="number" name="bonus_credits" value="{{ plan.bonus_credits or 0 }}"></div></div>
+  <div class="grid2"><div><label class="label">Selo</label><input class="input" name="badge" value="{{ plan.badge or '' }}" placeholder="Mais vendido"></div><div><label class="label">Texto do botão</label><input class="input" name="cta" value="{{ plan.cta or 'Comprar' }}"></div></div>
+  <label class="label">Descrição comercial</label><textarea name="description">{{ plan.description or '' }}</textarea>
+  <label class="pill"><input type="checkbox" name="featured" {% if plan.featured %}checked{% endif %}> Destacar como plano principal</label>
+  <label class="pill"><input type="checkbox" name="active" {% if plan.active %}checked{% endif %}> Plano ativo</label>
+  <div class="hr"></div><button class="btn">{{ action }}</button> <a class="btn light" href="{{ url_for('admin_commercial') }}">Voltar</a>
+</form>
+{% endblock %}

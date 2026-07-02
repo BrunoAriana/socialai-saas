@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ site_name }}</title>
+  <style>
+    :root{--bg:#f7f2ea;--dark:#201812;--muted:#776b60;--card:#fffdf8;--line:#eadfce;--accent:#b88a44;--accent2:#33251b;--ok:#047857;--err:#b91c1c;--warn:#b45309}
+    *{box-sizing:border-box} body{margin:0;font-family:Inter,Arial,Helvetica,sans-serif;background:linear-gradient(180deg,#fffaf2,var(--bg));color:var(--dark)}
+    a{color:var(--accent2);text-decoration:none}.nav{display:flex;align-items:center;justify-content:space-between;padding:18px 30px;background:rgba(255,253,248,.92);backdrop-filter:blur(16px);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}.brand{font-weight:900;font-size:21px;color:var(--dark);letter-spacing:-.03em}.brand:before{content:'✦';color:var(--accent);margin-right:8px}.navlinks a{margin-left:18px;color:#4a3c31;font-weight:650}.wrap{max-width:1180px;margin:0 auto;padding:34px 20px}.hero{display:grid;grid-template-columns:1.15fr .85fr;gap:30px;align-items:center;padding:58px 0}.hero h1{font-size:54px;line-height:1.02;margin:0 0 18px;letter-spacing:-.05em}.hero p{font-size:18px;color:var(--muted);line-height:1.65}.card{background:rgba(255,253,248,.94);border:1px solid var(--line);border-radius:24px;padding:25px;box-shadow:0 18px 50px rgba(32,24,18,.08)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}.btn{display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:#fff!important;border:none;border-radius:999px;padding:12px 18px;font-weight:850;cursor:pointer;box-shadow:0 10px 24px rgba(184,138,68,.22)}.btn.secondary{background:var(--accent2)}.btn.light{background:#fff3dd;color:#5d3d14!important;box-shadow:none}.btn.danger{background:#b91c1c}.btn.ok{background:#047857}.input,textarea,select{width:100%;padding:13px 15px;border:1px solid var(--line);border-radius:14px;margin:7px 0 17px;background:#fff;color:var(--dark)}textarea{min-height:180px}.label{font-weight:850;font-size:14px}.flash{padding:13px 15px;border-radius:14px;margin-bottom:16px}.flash.success{background:#ecfdf5;color:var(--ok);border:1px solid #bbf7d0}.flash.error{background:#fef2f2;color:var(--err);border:1px solid #fecaca}table{width:100%;border-collapse:collapse;background:#fffdf8;border-radius:18px;overflow:hidden;border:1px solid var(--line)}th,td{text-align:left;border-bottom:1px solid var(--line);padding:14px;vertical-align:top}th{background:#fbf3e6}.postimg{width:100%;max-width:430px;border-radius:18px;border:1px solid var(--line);box-shadow:0 16px 40px rgba(32,24,18,.12)}.badge{display:inline-block;border-radius:999px;padding:6px 11px;background:#fff3dd;color:#7a531e;font-size:12px;font-weight:850}.badge.ok{background:#ecfdf5;color:#047857}.badge.warn{background:#fffbeb;color:#b45309}.badge.err{background:#fef2f2;color:#b91c1c}.muted{color:var(--muted)}.kpi{font-size:34px;font-weight:950;margin:4px 0;letter-spacing:-.04em}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.price{font-size:38px;font-weight:950;margin:8px 0;letter-spacing:-.05em}.small{font-size:13px}.notice{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:16px;padding:14px;margin:18px 0}.sample{min-height:330px;background:radial-gradient(circle at 75% 22%,rgba(184,138,68,.25),transparent 32%),linear-gradient(135deg,#fff8ed,#eaddca);position:relative;overflow:hidden}.sample:after{content:'VOCÊ NÃO PRECISA DE MAIS POSTS. PRECISA DE POSTS CERTOS.';position:absolute;left:30px;top:38px;width:70%;font-family:Georgia,serif;font-size:37px;line-height:1.08;font-weight:900;color:#241810}.sample:before{content:'Agende sua avaliação';position:absolute;left:30px;bottom:34px;background:var(--accent);color:white;padding:14px 22px;border-radius:999px;font-weight:800}.pill{display:inline-block;padding:8px 13px;border:1px solid var(--line);border-radius:999px;background:white;margin:4px}.hr{height:1px;background:var(--line);margin:22px 0}@media(max-width:860px){.hero,.grid,.grid2{grid-template-columns:1fr}.hero h1{font-size:38px}.nav{display:block}.navlinks{margin-top:12px}.navlinks a{margin-left:0;margin-right:12px;display:inline-block;margin-bottom:8px}.sample:after{font-size:30px;width:80%}}
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a class="brand" href="{{ url_for('dashboard') if session.get('user_id') else url_for('home') }}">{{ site_name }}</a>
+    <div class="navlinks">
+      {% if session.get('user_id') %}
+        <a href="{{ url_for('dashboard') }}">Painel</a><a href="{{ url_for('generate') }}">Gerar</a><a href="{{ url_for('posts') }}">Posts</a><a href="{{ url_for('calendar') }}">Calendário</a><a href="{{ url_for('plans') }}">Planos</a><a href="{{ url_for('brand') }}">Marca</a>{% if current_user and current_user.is_admin %}<a href="{{ url_for('admin_orders') }}">Pedidos</a><a href="{{ url_for('admin_commercial') }}">Comercial</a>{% endif %}<a href="{{ url_for('logout') }}">Sair</a>
+      {% else %}
+        <a href="{{ url_for('login') }}">Entrar</a><a class="btn" href="{{ url_for('register') }}">Criar conta</a>
+      {% endif %}
+    </div>
+  </div>
+  <main class="wrap">
+    {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat,msg in messages %}<div class="flash {{cat}}">{{msg}}</div>{% endfor %}{% endif %}{% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
