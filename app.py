@@ -2,6 +2,9 @@ import os
 import random
 import re
 import textwrap
+import base64
+import json
+import urllib.request
 from datetime import datetime, timedelta
 from functools import wraps
 from io import BytesIO
@@ -11,6 +14,11 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
+
+try:
+    from openai import OpenAI
+except Exception:
+    OpenAI = None
 
 BASE_DIR = Path(__file__).resolve().parent
 INSTANCE_DIR = BASE_DIR / 'instance'
@@ -160,6 +168,10 @@ DEFAULT_SETTINGS = {
     'sales_banner': 'Oferta de lançamento: Plano Pro com preço promocional para os primeiros clientes.',
     'pix_key': os.getenv('PIX_KEY', 'configure-sua-chave-pix'),
     'whatsapp': '',
+    'premium_ai_enabled': '1',
+    'ai_premium_cost': os.getenv('AI_PREMIUM_COST', '3'),
+    'openai_text_model': os.getenv('OPENAI_TEXT_MODEL', 'gpt-4.1-mini'),
+    'openai_image_model': os.getenv('OPENAI_IMAGE_MODEL', 'gpt-image-1'),
 }
 
 
@@ -203,6 +215,9 @@ STYLES = {
     'minimal': 'Minimalista',
     'bold': 'Chamativo',
     'editorial': 'Editorial / autoridade',
+    'luxo': 'Luxo / sofisticado',
+    'saude': 'Saúde / clínico premium',
+    'vendedor': 'Comercial / vendedor',
 }
 
 
@@ -265,6 +280,159 @@ def clean_tag(text):
     text = text.translate(accents)
     return ''.join(ch for ch in text if ch.isalnum())[:28]
 
+
+
+def openai_client():
+    api_key = os.getenv('OPENAI_API_KEY')
+    if not api_key or not OpenAI:
+        return None
+    return OpenAI(api_key=api_key)
+
+
+def json_from_text(text):
+    if not text:
+        return None
+    cleaned = text.strip()
+    cleaned = re.sub(r'^```(?:json)?', '', cleaned).strip()
+    cleaned = re.sub(r'```$', '', cleaned).strip()
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        match = re.search(r'\{.*\}', cleaned, flags=re.S)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except Exception:
+                return None
+    return None
+
+
+def ai_text_pack(brand, topic, objective, style):
+    """Gera copy estratégica via API. Se não houver chave, usa o motor local."""
+    client = openai_client()
+    if not client:
+        return None
+    model = get_setting('openai_text_model', os.getenv('OPENAI_TEXT_MODEL', 'gpt-4.1-mini'))
+    prompt = f"""
+Você é estrategista sênior de marketing para redes sociais no Brasil.
+Crie um post premium para Instagram com alta chance de gerar interesse, direct ou venda.
+Responda SOMENTE em JSON válido, sem markdown.
+
+Dados da marca:
+- Nome: {brand.business_name}
+- Nicho: {brand.niche}
+- Público: {brand.audience}
+- Oferta: {brand.offer}
+- Tom de voz: {brand.tone}
+- Instagram: {brand.instagram}
+
+Pedido:
+- Tema: {topic}
+- Objetivo: {OBJECTIVES.get(objective, objective)}
+- Estilo visual: {STYLES.get(style, style)}
+
+JSON obrigatório:
+{{
+  "title": "headline curta, forte, com no máximo 70 caracteres",
+  "subtitle": "subheadline persuasivo com no máximo 95 caracteres",
+  "body": "texto curto para entrar na arte, com no máximo 125 caracteres",
+  "cta": "chamada curta com no máximo 34 caracteres",
+  "caption": "legenda completa em português, com quebra de linhas, educativa e persuasiva, sem promessas milagrosas",
+  "hashtags": "8 a 12 hashtags relevantes em português"
+}}
+""".strip()
+    try:
+        # Preferência: Responses API. Fallback para Chat Completions se o SDK/conta não suportar.
+        try:
+            resp = client.responses.create(model=model, input=prompt)
+            text = getattr(resp, 'output_text', None) or ''
+        except Exception:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{'role': 'user', 'content': prompt}],
+                temperature=0.7,
+            )
+            text = resp.choices[0].message.content
+        data = json_from_text(text)
+        if not data:
+            return None
+        return {
+            'title': str(data.get('title') or strategic_title(topic, objective, brand))[:180],
+            'subtitle': str(data.get('subtitle') or make_subtitle(topic, objective, brand))[:220],
+            'body': str(data.get('body') or 'Conteúdo estratégico para uma decisão mais segura.')[:220],
+            'cta': str(data.get('cta') or ('Fale conosco' if objective == 'oferta' else 'Agende sua avaliação'))[:60],
+            'caption': str(data.get('caption') or generate_caption(brand, topic, objective)),
+            'hashtags': str(data.get('hashtags') or make_hashtags(brand, topic)),
+        }
+    except Exception as exc:
+        print('OpenAI text generation failed:', exc)
+        return None
+
+
+def build_visual_prompt(brand, topic, objective, style, fmt):
+    palette = f"primary {brand.primary_color}, secondary {brand.secondary_color}, accent {brand.accent_color}"
+    format_desc = 'vertical Instagram story, 9:16' if fmt == 'story' else 'square Instagram feed post, 1:1'
+    niche = brand.niche.lower()
+    subject = 'premium editorial brand campaign background'
+    if any(k in niche for k in ['estética','estetica','beleza','clínica','clinica','dermato','odont','saúde','saude','nutri','psicolog']):
+        subject = 'professional lifestyle photo of a confident adult client in a premium clinic atmosphere, healthy natural look, elegant lighting'
+    elif any(k in niche for k in ['advoc','juríd','jurid']):
+        subject = 'premium law office atmosphere, elegant professional portrait style, sophisticated corporate visual'
+    elif any(k in niche for k in ['imobili','corret','arquitet']):
+        subject = 'premium real estate and architecture atmosphere, elegant interior, natural light, sophisticated editorial style'
+    elif any(k in niche for k in ['restaurante','comida','gastron']):
+        subject = 'premium food and restaurant campaign background, elegant table styling, appetizing editorial photo'
+    return f"""
+Create a premium commercial visual asset for a Brazilian social media SaaS to be used as the background/hero image of an Instagram post.
+IMPORTANT: do not include any text, letters, words, numbers, logo, watermark, captions, UI, posters or readable typography in the image.
+Format: {format_desc}.
+Business niche: {brand.niche}. Campaign theme: {topic}. Objective: {OBJECTIVES.get(objective, objective)}. Visual style: {STYLES.get(style, style)}.
+Scene: {subject}.
+Color direction: {palette}; use refined neutrals, soft light, luxurious but credible composition, high-end advertising photography, polished, modern, premium, realistic.
+Leave clean negative space on the left side or top-left area for text overlay. No exaggerated beauty filters, no medical claims, no before/after, no explicit procedures.
+""".strip()
+
+
+def create_ai_visual_asset(brand, topic, objective, style, fmt):
+    client = openai_client()
+    if not client:
+        return None
+    model = get_setting('openai_image_model', os.getenv('OPENAI_IMAGE_MODEL', 'gpt-image-1'))
+    size = '1024x1536' if fmt == 'story' else '1024x1024'
+    prompt = build_visual_prompt(brand, topic, objective, style, fmt)
+    try:
+        try:
+            result = client.images.generate(model=model, prompt=prompt, size=size, quality='high', n=1)
+        except TypeError:
+            result = client.images.generate(model=model, prompt=prompt, size=size, n=1)
+        item = result.data[0]
+        if getattr(item, 'b64_json', None):
+            raw = base64.b64decode(item.b64_json)
+        elif getattr(item, 'url', None):
+            with urllib.request.urlopen(item.url, timeout=60) as response:
+                raw = response.read()
+        else:
+            return None
+        return Image.open(BytesIO(raw)).convert('RGB')
+    except Exception as exc:
+        print('OpenAI image generation failed:', exc)
+        return None
+
+
+def fit_cover(img, size):
+    w, h = size
+    src_ratio = img.width / img.height
+    dst_ratio = w / h
+    if src_ratio > dst_ratio:
+        new_h = h
+        new_w = int(h * src_ratio)
+    else:
+        new_w = w
+        new_h = int(w / src_ratio)
+    resized = img.resize((new_w, new_h), Image.LANCZOS)
+    left = (new_w - w) // 2
+    top = (new_h - h) // 2
+    return resized.crop((left, top, left + w, top + h))
 
 def strategic_title(topic, objective, brand):
     niche = brand.niche.lower()
@@ -512,6 +680,95 @@ def generate_image(post, brand):
     return filename
 
 
+
+def generate_ai_premium_image(post, brand, hero_img, body_text=None, cta_text=None):
+    """Composição premium: IA cria a foto/fundo; o sistema aplica textos legíveis e marca."""
+    PRIVATE_DIR.mkdir(parents=True, exist_ok=True)
+    feed = post.format == 'feed'
+    w, h = (1080, 1080) if feed else (1080, 1920)
+    primary = hex_to_rgb(brand.primary_color, (55, 37, 26))
+    secondary = hex_to_rgb(brand.secondary_color, (247, 239, 230))
+    accent = hex_to_rgb(brand.accent_color, (184, 138, 68))
+    dark = (34, 24, 18)
+    cream = blend(secondary, (255, 255, 255), 0.55)
+
+    if hero_img is None:
+        return generate_image(post, brand)
+
+    bg = fit_cover(hero_img, (w, h)).filter(ImageFilter.UnsharpMask(radius=1.0, percent=110, threshold=3))
+    overlay = Image.new('RGBA', (w, h), (0,0,0,0))
+    d = ImageDraw.Draw(overlay)
+
+    # Véu premium para garantir leitura do texto.
+    panel_w = int(w * (0.62 if feed else 0.82))
+    d.rounded_rectangle([0, 0, panel_w, h], radius=0, fill=(*cream, 238))
+    # Degradê suave do painel para a foto.
+    for x in range(panel_w-180, panel_w+90):
+        if 0 <= x < w:
+            t = min(max((x - (panel_w-180)) / 270, 0), 1)
+            alpha = int(238 * (1-t))
+            d.line([(x, 0), (x, h)], fill=(*cream, alpha))
+    # Curvas e detalhes de luxo.
+    for i, r in enumerate([520, 760, 1040]):
+        box = [w - r//2, 90+i*55, w + r//2, 90+i*55+r]
+        d.ellipse(box, outline=(*blend(accent, (255,255,255), .60), 130), width=3)
+    d.line([72, 122 if feed else 150, 500, 122 if feed else 150], fill=(*accent, 210), width=2)
+    d.rounded_rectangle([54, h-170 if feed else h-235, w-54, h-38], radius=32, fill=(*blend(cream, (255,255,255), .20), 232))
+    d.arc([-120, h-250 if feed else h-325, w+160, h-25], 10, 178, fill=(*accent, 230), width=8)
+
+    img = Image.alpha_composite(bg.convert('RGBA'), overlay).convert('RGB')
+    draw = ImageDraw.Draw(img)
+    left = 76
+    top = 78 if feed else 112
+    draw_lotus(draw, left + 48, top + 20, accent)
+
+    headline = (post.title or '').upper()
+    title_size = 56 if feed else 72
+    if len(headline) > 58:
+        title_size -= 7
+    y = top + 105
+    max_text = int(w * (0.50 if feed else 0.72))
+    y = draw_wrapped(draw, headline, (left, y), max_text, font(title_size, bold=True, serif=True), dark, line_gap=12, max_lines=4 if feed else 6)
+    y += 20
+    y = draw_wrapped(draw, (post.subtitle or '').upper(), (left, y), max_text, font(32 if feed else 44, bold=True), accent, line_gap=8, max_lines=3)
+    y += 20
+    draw.line([left, y, left + 100, y], fill=accent, width=5)
+    y += 30
+    body = body_text or 'Conteúdo estratégico, visual profissional e chamada clara para gerar interesse.'
+    draw_wrapped(draw, body, (left, y), int(w * (0.46 if feed else 0.70)), font(24 if feed else 34), (52, 48, 45), line_gap=9, max_lines=3)
+
+    btn_y = int(h * (0.74 if feed else 0.70))
+    btn_w = 470 if feed else 610
+    cta = cta_text or ('Fale conosco' if post.objective == 'oferta' else 'Agende sua avaliação')
+    draw.rounded_rectangle([left, btn_y, left + btn_w, btn_y + 86], radius=43, fill=accent, outline=blend(accent, (255,255,255), .45), width=3)
+    draw.ellipse([left + 30, btn_y + 22, left + 72, btn_y + 64], outline=(255, 255, 255), width=3)
+    draw.line([left + 41, btn_y + 43, left + 61, btn_y + 43], fill=(255,255,255), width=3)
+    draw.text((left + 95, btn_y + 23), cta[:34], font=font(30 if feed else 38, bold=True), fill=(255, 255, 255))
+
+    footer_y = h - (150 if feed else 210)
+    monogram = ''.join([part[0] for part in brand.business_name.split()[:2]]).upper() or 'AI'
+    draw.text((left, footer_y + 42), monogram, font=font(52 if feed else 66, bold=True, serif=True), fill=accent)
+    draw.line([left+94, footer_y + 35, left+94, footer_y + 105], fill=blend(accent, (255,255,255), .35), width=2)
+    draw.text((left + 125, footer_y + 34), brand.business_name[:26], font=font(30 if feed else 42, serif=True), fill=dark)
+    draw.text((left + 125, footer_y + 72), (brand.instagram or '@suamarca')[:30], font=font(23 if feed else 33), fill=(96, 88, 82))
+
+    if feed:
+        labels = [('IA', 'PREMIUM'), ('COPY', 'ESTRATÉGICA'), ('VISUAL', 'PROFISSIONAL')]
+        x0 = int(w * 0.60)
+        gap = 132
+        for i, (a, b) in enumerate(labels):
+            x = x0 + i * gap
+            draw.ellipse([x, footer_y + 28, x+42, footer_y + 70], outline=accent, width=3)
+            draw.text((x - 10, footer_y + 78), a, font=font(14, bold=True), fill=(96, 88, 82))
+            draw.text((x - 29, footer_y + 98), b, font=font(14), fill=(96, 88, 82))
+            if i < 2:
+                draw.line([x + 90, footer_y + 34, x + 90, footer_y + 108], fill=blend(accent, (255,255,255), .50), width=2)
+
+    filename = safe_filename(post.id)
+    path = PRIVATE_DIR / filename
+    img.save(path, 'PNG', optimize=True)
+    return filename
+
 def make_preview_image(path):
     img = Image.open(path).convert('RGB')
     max_w = 640
@@ -623,15 +880,30 @@ def generate():
         format_name = request.form.get('format', 'feed')
         style = request.form.get('style', 'premium')
         objective = request.form.get('objective', 'interesse')
+        generation_mode = request.form.get('generation_mode', 'template')
+        premium_enabled = get_setting('premium_ai_enabled', '1') == '1'
+        premium_cost = max(0, int(get_setting('ai_premium_cost', os.getenv('AI_PREMIUM_COST', '3')) or 0))
+        user = current_user()
+        use_premium_ai = generation_mode == 'premium_ai' and premium_enabled
+        if use_premium_ai and not os.getenv('OPENAI_API_KEY'):
+            flash('Modo IA Premium ainda não está configurado. Adicione OPENAI_API_KEY no Render e tente novamente.', 'error')
+            return redirect(url_for('generate'))
+        if use_premium_ai and user.credits < premium_cost * qty:
+            flash(f'IA Premium exige {premium_cost} créditos por arte gerada. Você tem {user.credits} crédito(s).', 'error')
+            return redirect(url_for('plans'))
+
         schedule_start = datetime.utcnow() + timedelta(days=1)
+        generated_with_ai = 0
         for i in range(qty):
-            title = strategic_title(topic, objective, brand)
+            ai_pack = ai_text_pack(brand, topic, objective, style) if use_premium_ai else None
+            title = (ai_pack or {}).get('title') or strategic_title(topic, objective, brand)
+            subtitle = (ai_pack or {}).get('subtitle') or make_subtitle(topic, objective, brand)
             post = Post(
                 user_id=session['user_id'],
                 title=title,
-                subtitle=make_subtitle(topic, objective, brand),
-                caption=generate_caption(brand, topic, objective),
-                hashtags=make_hashtags(brand, topic),
+                subtitle=subtitle,
+                caption=(ai_pack or {}).get('caption') or generate_caption(brand, topic, objective),
+                hashtags=(ai_pack or {}).get('hashtags') or make_hashtags(brand, topic),
                 format=format_name,
                 style=style,
                 objective=objective,
@@ -640,9 +912,22 @@ def generate():
             )
             db.session.add(post)
             db.session.commit()
-            post.image_file = generate_image(post, brand)
+            if use_premium_ai:
+                hero = create_ai_visual_asset(brand, topic, objective, style, format_name)
+                if hero is not None:
+                    post.image_file = generate_ai_premium_image(post, brand, hero, (ai_pack or {}).get('body'), (ai_pack or {}).get('cta'))
+                    user.credits -= premium_cost
+                    generated_with_ai += 1
+                else:
+                    post.image_file = generate_image(post, brand)
+                    flash('A IA visual não respondeu em uma geração; usei o template premium como fallback sem cobrar os créditos dessa arte.', 'error')
+            else:
+                post.image_file = generate_image(post, brand)
             db.session.commit()
-        flash(f'{qty} post(s) premium gerado(s). A prévia tem marca d’água; o PNG final exige créditos.', 'success')
+        if generated_with_ai:
+            flash(f'{generated_with_ai} arte(s) com IA Premium gerada(s). Foram consumidos {premium_cost * generated_with_ai} créditos de geração. O download final ainda exige créditos.', 'success')
+        else:
+            flash(f'{qty} post(s) por template premium gerado(s). A prévia tem marca d’água; o PNG final exige créditos.', 'success')
         return redirect(url_for('posts'))
     return render_template('generate.html', brand=brand)
 

@@ -13,6 +13,10 @@
   <label class="label">Subtítulo da página pública</label><textarea name="hero_subtitle">{{ settings.hero_subtitle }}</textarea>
   <label class="label">Banner de promoção na página de planos</label><textarea name="sales_banner">{{ settings.sales_banner }}</textarea>
   <div class="grid2"><div><label class="label">Chave PIX</label><input class="input" name="pix_key" value="{{ settings.pix_key }}"></div><div><label class="label">WhatsApp comercial</label><input class="input" name="whatsapp" value="{{ settings.whatsapp }}" placeholder="5599999999999"></div></div>
+  <h3>IA Premium</h3>
+  <div class="grid2"><div><label class="label">Ativar IA Premium</label><select name="premium_ai_enabled"><option value="1" {% if settings.premium_ai_enabled == '1' %}selected{% endif %}>Sim</option><option value="0" {% if settings.premium_ai_enabled == '0' %}selected{% endif %}>Não</option></select></div><div><label class="label">Créditos por geração IA Premium</label><input class="input" name="ai_premium_cost" value="{{ settings.ai_premium_cost }}"></div></div>
+  <div class="grid2"><div><label class="label">Modelo de texto OpenAI</label><input class="input" name="openai_text_model" value="{{ settings.openai_text_model }}"></div><div><label class="label">Modelo de imagem OpenAI</label><input class="input" name="openai_image_model" value="{{ settings.openai_image_model }}"></div></div>
+  <p class="small muted">A chave OPENAI_API_KEY fica nas variáveis do Render, não aparece aqui por segurança.</p>
   <button class="btn">Salvar configurações</button>
 </form>
 

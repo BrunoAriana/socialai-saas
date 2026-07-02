@@ -1,1 +1,28 @@
-{% extends 'base.html' %}{% block content %}<div class="card" style="max-width:840px"><h1>Gerar posts premium</h1><p class="muted">Marca ativa: <b>{{ brand.business_name }}</b>. As imagens finais ficam privadas e o cliente só baixa com créditos.</p><form method="post"><label class="label">Tema da campanha</label><input class="input" name="topic" placeholder="Ex: procedimento certo para cada tipo de pele" required><div class="grid2"><div><label class="label">Objetivo do post</label><select name="objective">{% for key,label in objectives.items() %}<option value="{{key}}">{{label}}</option>{% endfor %}</select></div><div><label class="label">Estilo visual</label><select name="style">{% for key,label in styles.items() %}<option value="{{key}}">{{label}}</option>{% endfor %}</select></div></div><div class="grid2"><div><label class="label">Quantidade</label><input class="input" type="number" min="1" max="30" name="qty" value="3"></div><div><label class="label">Formato</label><select name="format"><option value="feed">Feed quadrado</option><option value="story">Story vertical</option></select></div></div><p><label><input type="checkbox" name="auto_schedule"> Agendar automaticamente a cada 2 dias</label></p><button class="btn">Gerar conteúdo e artes</button></form></div>{% endblock %}
+{% extends 'base.html' %}{% block content %}
+<div class="card" style="max-width:900px">
+  <h1>Gerar posts profissionais</h1>
+  <p class="muted">Marca ativa: <b>{{ brand.business_name }}</b>. Escolha entre template premium ou IA visual premium.</p>
+  <div class="notice"><b>IA Premium:</b> usa imagem gerada por IA + texto estratégico. Consome {{ get_setting('ai_premium_cost','3') }} créditos por arte gerada e exige OPENAI_API_KEY configurada no servidor.</div>
+  <form method="post">
+    <label class="label">Tema da campanha</label>
+    <input class="input" name="topic" placeholder="Ex: procedimento certo para cada tipo de pele" required>
+
+    <label class="label">Modo de geração</label>
+    <select name="generation_mode">
+      <option value="template">Template premium — mais rápido e econômico</option>
+      <option value="premium_ai">IA Visual Premium — melhor qualidade visual</option>
+    </select>
+
+    <div class="grid2">
+      <div><label class="label">Objetivo do post</label><select name="objective">{% for key,label in objectives.items() %}<option value="{{key}}">{{label}}</option>{% endfor %}</select></div>
+      <div><label class="label">Estilo visual</label><select name="style">{% for key,label in styles.items() %}<option value="{{key}}">{{label}}</option>{% endfor %}</select></div>
+    </div>
+    <div class="grid2">
+      <div><label class="label">Quantidade</label><input class="input" type="number" min="1" max="10" name="qty" value="1"><span class="small muted">Para IA Premium, comece com 1 arte por vez.</span></div>
+      <div><label class="label">Formato</label><select name="format"><option value="feed">Feed quadrado</option><option value="story">Story vertical</option></select></div>
+    </div>
+    <p><label><input type="checkbox" name="auto_schedule"> Agendar automaticamente a cada 2 dias</label></p>
+    <button class="btn">Gerar conteúdo e arte</button>
+  </form>
+</div>
+{% endblock %}
